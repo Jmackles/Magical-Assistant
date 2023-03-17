@@ -396,3 +396,7 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+.vscode/settings.json
+.gitignore
+.gitattributes copy
+.gitignore

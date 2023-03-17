@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MMMSS Chatbot</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+
+    <div class="container">
+        <form class="form-container" action="{{ url_for('chat') }}" method="post">
+            <input type="text" class="message-input" name="message" placeholder="Type your message here..." required>
+            <button type="submit" class="send-button">Send</button>
+        </form>
+
+        <h1>MMMSS Chatbot</h1>
+
+        <div class="chat-area">
+            {% for message in chat_history %}
+<div class="message {% if 'User' in message %}user-message{% else %}assistant-message{% endif %}">{{ message }}</div>
+            {% endfor %}
+        </div>
+    </div>
+
+</body>
+</html>
