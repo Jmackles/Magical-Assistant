@@ -1,0 +1,492 @@
+
+**test_chat_history_handler.py**
+
+```python
+import unittest
+from chat_history_handler import ChatHistory
+
+# TestChatHistory class to test the ChatHistory class from chat_history_handler.py
+class TestChatHistory(unittest.TestCase):
+
+    # setUp() is called before running each test, initializes a ChatHistory instance for testing purposes
+    def setUp(self):
+        self.history = ChatHistory()
+
+    # Test whether adding a message to the chat history increases the chat log's length by 1
+    def test_add_message(self):
+        self.history.add_message("User", "Hello")
+        self.assertEqual(len(self.history.chat_log), 1)
+
+    # Test if get_chat_history() retrieves chat history as a list of formatted messages
+    def test_get_chat_history(self):
+        self.history.add_message("Assistant", "Hi there!")
+        formatted_messages = self.history.get_chat_history()
+        self.assertTrue(isinstance(formatted_messages, list))
+
+    # Test whether clear_chat_history() clears the chat log and results in a chat log of size zero
+    def test_clear_chat_history(self):
+        self.history.add_message("User", "Hello")
+        self.history.clear_chat_history()
+        self.assertEqual(len(self.history.chat_log), 0)
+
+    # Test if get_last_context() with context size 2 correctly gets the last two messages of the chat history
+    def test_get_last_context(self):
+        self.history.add_message("User", "Hello")
+        self.history.add_message("Assistant", "How may I help?")
+        last_context = self.history.get_last_context(2)
+        is_three_dots = ' '.join(['...'] * 3) in last_context
+        self.assertFalse(is_three_dots)
+        self.assertIn("User: Hello", last_context)
+        self.assertIn("Assistant: How may I help?", last_context)
+
+# Execute the tests using the command line interface
+if __name__ == "__main__":
+    unittest.main()
+
+```
+
+**test_chatbot.py**
+
+```python
+
+```
+
+**test_event_parser.py**
+
+```python
+
+```
+
+**test_integration.py**
+
+```python
+import os
+import unittest
+from openai_integration import OpenAIIntegration
+
+class TestOpenAIIntegration(unittest.TestCase):
+
+    def setUp(self):
+        api_key = os.environ.get("OPENAI_TOKEN")
+        self.openai_integration = OpenAIIntegration(api_key)
+
+    def test_generate_chatbot_response(self):
+        user_message = "What is the capital of France?"
+        last_context = ""
+        response = self.openai_integration.generate_chatbot_response(user_message, last_context)
+        self.assertIsNotNone(response, msg="The generated chatbot response should not be None.")
+        self.assertNotEqual(response.strip(), "", msg="The generated chatbot response should not be an empty string.")
+
+if __name__ == '__main__':
+    unittest.main()
+
+```
+
+**test_wondrouscalendar.py**
+
+```python
+
+```
+
+**buildup.py**
+
+```python
+import os
+import psycopg2
+import re
+from dotenv import load_dotenv
+
+load_dotenv()
+
+DB_HOST = os.getenv("DB_HOST")
+DB_PORT = os.getenv("DB_PORT")
+DB_NAME = os.getenv("DB_NAME")
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+
+conn = psycopg2.connect(host=DB_HOST, port=DB_PORT, dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD)
+cursor = conn.cursor()
+
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS files (
+    id SERIAL PRIMARY KEY,
+    file_path VARCHAR(255) NOT NULL
+);
+''')
+
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS code_chunks (
+    id SERIAL PRIMARY KEY,
+    chunk_content TEXT NOT NULL,
+    function_name VARCHAR(255),
+    function_line INTEGER,
+    file_id INTEGER REFERENCES files(id)
+);
+''')
+
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS metadata (
+    id SERIAL PRIMARY KEY,
+    code_chunk_id INTEGER REFERENCES code_chunks(id),
+    description TEXT NOT NULL
+);
+''')
+conn.commit()
+
+def get_functions(file_path):
+    functions = []
+    with open(file_path, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+        for idx, line in enumerate(lines):
+            match = re.match(r'\s*def\s+(\w+)\s*\(', line)
+            if match:
+                functions.append({
+                    'name': match.group(1),
+                    'line_number': idx + 1
+                })
+    return functions
+
+def get_file_paths(base_dir, relative_paths):
+    return [os.path.join(base_dir, path) for path in relative_paths]
+
+def write_header(out, file_path):
+    base_name = os.path.basename(file_path)
+    out.write(f"\n**{base_name}**\n\n")
+
+def main():
+    file_paths = get_file_paths(BASE_DIR, FILE_RELATIVE_PATHS)
+    create_codebase_transcript(file_paths, OUTPUT_FILE)
+    print(f"Codebase transcript saved as {OUTPUT_FILE}")
+
+def write_code_block(out, in_file):
+    code_content = in_file.read()
+    out.write(f"```python\n{code_content}\n```\n")
+
+def create_codebase_transcript(file_paths, output_file):
+    file_insert = "INSERT INTO files (file_path) VALUES (%s) RETURNING id;"
+    code_chunk_insert = """INSERT INTO code_chunks (chunk_content, function_name, function_line, file_id)
+                           VALUES (%s, %s, %s, %s);"""
+
+    with open(output_file, "w", newline="\n") as out:
+        with psycopg2.connect(host=DB_HOST, port=DB_PORT, dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD) as conn:
+            with conn.cursor() as cursor:   
+                for file_path in file_paths:
+                    if not os.path.isfile(file_path):
+                        continue
+
+                    write_header(out, file_path)
+
+                    cursor.execute(file_insert, (os.path.abspath(file_path),))
+                    file_id = cursor.fetchone()[0]
+
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        write_code_block(out, f)
+                        functions = get_functions(file_path)
+                        for func in functions:
+                            cursor.execute(code_chunk_insert, (f.read(), func['name'], func['line_number'], file_id))
+
+if __name__ == "__main__":
+    BASE_DIR = "/Users/jamalelakrah/Documents/GitHub/Magical-Assistant"
+    FILE_RELATIVE_PATHS = [
+        'tests/test_chat_history_handler.py',
+        'tests/test_chatbot.py',
+        'tests/test_event_parser.py',
+        'tests/test_integration.py',
+        'tests/test_wondrouscalendar.py',
+        'buildup.py',
+        'chat_history_handler.py',
+        'chatbot.py',
+        'event_parser.py',
+        'openai_integration.py',
+        'sample.env',
+        'wondrouscalendar.py'
+    ]
+    OUTPUT_FILE = "/Users/jamalelakrah/Documents/GitHub/Magical-Assistant/output.txt"
+
+    file_paths = get_file_paths(BASE_DIR, FILE_RELATIVE_PATHS)
+    create_codebase_transcript(file_paths, OUTPUT_FILE)
+    print(f"Codebase transcript saved as {OUTPUT_FILE}")
+
+```
+
+**chat_history_handler.py**
+
+```python
+import datetime
+
+class Message:
+    def __init__(self, sender, message):
+        self.sender = sender
+        self.message = message
+        self.timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    def formatted_message(self):
+        return f"{self.timestamp} - {self.sender}: {self.message}"
+
+
+class ChatHistory:
+    def __init__(self):
+        self.chat_log = []
+
+    def add_message(self, sender, message):
+        self.chat_log.append(Message(sender, message))
+
+    def get_chat_history(self):
+        return [message.formatted_message() for message in self.chat_log]
+
+    def clear_chat_history(self):
+        self.chat_log.clear()
+
+    def get_last_context(self, num_messages=3):
+        context_messages = self.chat_log[-num_messages:] if len(self.chat_log) >= num_messages else self.chat_log
+        return ' '.join(message.formatted_message() for message in context_messages)
+
+
+class Chat:
+    def __init__(self, name):
+        self.name = name
+        self.chat_history = ChatHistory()
+
+    def send_message(self, sender, message):
+        self.chat_history.add_message(sender, message)
+
+    def get_context(self, num_messages=3):
+        return self.chat_history.get_last_context(num_messages=num_messages)
+
+    def clear_chat(self):
+        self.chat_history.clear_chat_history()
+
+    def __repr__(self):
+        return f"Chat('{self.name}')"
+
+    def __str__(self):
+        return f"{self.name}"
+
+
+```
+
+**chatbot.py**
+
+```python
+# Import necessary Flask components for our magical web application
+from flask import Flask, render_template, request, redirect, url_for
+from dotenv import load_dotenv
+load_dotenv()
+# Import the enchanted ChatHistory and OpenAIIntegration classes from their respective modules
+from chat_history_handler import ChatHistory
+from openai_integration import OpenAIIntegration
+
+# Summon the os library to harness the power of environment variables
+import os
+
+# Create a Flask app and initialize ChatHistory and OpenAIIntegration instances
+app = Flask(__name__)
+chat_history = ChatHistory()
+
+# Check if the OPENAI_API_KEY is set, raise an informative error if not
+api_key = os.environ.get("OPENAI_TOKEN")
+if api_key is None:
+    raise ValueError("OPENAI_TOKEN environment variable not set. Please provide the API key.")
+openai_integration = OpenAIIntegration(api_key)
+
+# Define the route for the index page
+@app.route("/")
+def index():
+    # Render the index.html template with the chat history
+    return render_template("index.html", chat_history=chat_history.get_chat_history())
+
+# Define the route for processing chat messages
+@app.route("/chat", methods=["POST"])
+def chat():
+    # Extract the user's message from the form submission
+    user_message = request.form["message"]
+
+    # Add the user's message to the chat history
+    chat_history.add_message("User", user_message)
+
+    # Retrieve the last context from the chat history
+    last_context = chat_history.get_last_context()
+
+    # Generate the chatbot's response based on the user message and the last context
+    assistant_message = openai_integration.generate_chatbot_response(user_message, last_context)
+
+    # Add the chatbot's response to the chat history
+    chat_history.add_message("Assistant", assistant_message)
+
+    # Redirect back to the index page
+    return redirect(url_for("index"))
+
+# Run the Flask app in debug mode
+if __name__ == "__main__":
+    app.run(debug=True)
+
+```
+
+**event_parser.py**
+
+```python
+import spacy
+
+nlp = spacy.load("en_core_web_sm")
+
+def parse_event_info(user_message):
+    event_info = {
+        "event_name": "",
+        "event_date": "",
+        "event_time": "",
+        "location": "",
+    }
+
+    event_info["event_name"] = parse_event_name(user_message)
+    event_info["event_date"], event_info["event_time"] = parse_date_time(user_message)
+    event_info["location"] = parse_location(user_message)
+
+    return event_info
+
+def parse_event_name(user_message):
+    # Your code for extracting event name here
+    pass
+
+def parse_date_time(user_message):
+    parsed_date, parsed_time = "", ""
+    doc = nlp(user_message)
+    for ent in doc.ents:
+        if ent.label_ == "DATE":
+            parsed_date = ent.text
+        elif ent.label_ == "TIME":
+            parsed_time = ent.text
+    return parsed_date, parsed_time
+
+def parse_location(user_message):
+    # Your code for extracting location here
+```
+
+**openai_integration.py**
+
+```python
+# Import the openai library to access its arcane powers
+import openai
+
+# Invoke the time library to control the flow of moments
+import time
+
+# Summon the logging library to scribe the tales of our adventure
+import logging
+
+# Declare the enchanted OpenAIIntegration class
+class OpenAIIntegration:
+    # Construct the class with the mystical API key
+    def __init__(self, api_key):
+        self.api_key = api_key
+        openai.api_key = api_key
+
+    # Generate a chatbot response using the OpenAI API
+    def generate_chatbot_response(self, prompt, last_context):
+        # Combine user prompt and conversation history
+        full_prompt = f"{last_context}\nUser: {prompt}\nAssistant:"
+        
+        try:
+            MODEL = "gpt-3.5-turbo"
+            response = openai.ChatCompletion.create(
+                model=MODEL,
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": "Knock knock."},
+                    {"role": "assistant", "content": "Who's there?"},
+                    {"role": "user", "content": "Orange."},
+                ],
+                temperature=0,
+            )
+            
+            return response['choices'][0]['message']['content']
+            
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            return "An error occurred while generating a response."
+
+```
+
+**sample.env**
+
+```python
+################################################################################
+### Magical Assistant - Configuration
+### DONT PUSH THIS TO GITHUB IF EDITED
+################################################################################
+
+
+################################################################################
+### API KEYS/TOKENS/IDs
+################################################################################
+
+OPENAI_TOKEN = "<openai_api_token>"
+## OPENAI_ORGANIZATION = "<openai_org_id>" # if off the waitlist, specify your organization id to allow usage of the gpt-4 model
+DISCORD_TOKEN = "<discord_bot_token>"
+## PINECONE_TOKEN = "<pinecone_token>" # pinecone token, if you have it enabled. See readme
+## PINECONE_REGION = "<pinecone_region>" # add your region here if it's not us-west1-gcp
+## GOOGLE_SEARCH_API_KEY = "<google_api_key>" # allows internet searches and chats
+## GOOGLE_SEARCH_ENGINE_ID = "<google_engine_id>" # allows internet searches and chats
+## DEEPL_TOKEN = "<deepl_token>" # allows human language translations from DeepL API
+## GITHUB_TOKEN = "<github_access_token>" # allows indexing of GitHub repos
+## WOLFRAM_API_KEY = "<wolfram_app_id>" # allows internet connected chats to consult Wolfram API for knowledge
+## REPLICATE_API_KEY = "<replicate_api_key>" # connects to blip2 model on Replicate for image understanding
+### POSTGRE DATABASE
+## DB_HOST=<your_database_host>
+## DB_PORT=<your_database_port>
+## DB_NAME=<your_database_name>
+## DB_USER=<your_database_user>
+## DB_PASSWORD=<your_database_password>
+
+
+
+```
+
+**wondrouscalendar.py**
+
+```python
+# Import the components needed to conjure the power of Google Calendar API
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+
+# Define the scope and the file path to the service account credentials
+SCOPES = ["https://www.googleapis.com/auth/calendar"]
+SERVICE_ACCOUNT_FILE = "/Users/jamalelakrah/Documents/GitHub/MMMSS/omnibud-axhq-753417b9cb96.json"
+
+# Create the credentials object from the service account file and the defined scope
+credentials = service_account.Credentials.from_service_account_file(
+    SERVICE_ACCOUNT_FILE, scopes=SCOPES
+)
+
+# Build the Google Calendar API client
+calendar_api = build("calendar", "v3", credentials=credentials)
+
+# Define a function to create an event in the Google Calendar
+def create_event():
+    try:
+        # Define the event object with its properties
+        event_object = {
+            'summary': 'Appointment',
+            'location': 'Somewhere',
+            'start': {
+                'dateTime': '2023-04-21T10:00:00',
+                'timeZone': 'America/Los_Angeles',
+            },
+            'end': {
+                'dateTime': '2023-04-21T11:00:00',
+                'timeZone': 'America/Los_Angeles',
+            },
+        }
+
+        # Insert the event into the primary calendar and execute the request
+        created_event = calendar_api.events().insert(calendarId="primary", body=event_object).execute()
+
+        # Print the created event's link
+        print(f'Event created: {created_event.get("htmlLink")}')
+    except HttpError as error:
+        # Handle any errors that occur during the event creation
+        print(f"An error occurred: {error}")
+        created_event = None
+    return created_event
+
+```

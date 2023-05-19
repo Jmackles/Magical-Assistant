@@ -1,6 +1,7 @@
 # Import necessary Flask components for our magical web application
 from flask import Flask, render_template, request, redirect, url_for
-
+from dotenv import load_dotenv
+load_dotenv()
 # Import the enchanted ChatHistory and OpenAIIntegration classes from their respective modules
 from chat_history_handler import ChatHistory
 from openai_integration import OpenAIIntegration
@@ -13,9 +14,9 @@ app = Flask(__name__)
 chat_history = ChatHistory()
 
 # Check if the OPENAI_API_KEY is set, raise an informative error if not
-api_key = os.environ.get("OPENAI_API_KEY")
+api_key = os.environ.get("OPENAI_TOKEN")
 if api_key is None:
-    raise ValueError("OPENAI_API_KEY environment variable not set. Please provide the API key.")
+    raise ValueError("OPENAI_TOKEN environment variable not set. Please provide the API key.")
 openai_integration = OpenAIIntegration(api_key)
 
 # Define the route for the index page
